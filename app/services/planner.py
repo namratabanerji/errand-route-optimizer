@@ -1,6 +1,7 @@
 import time
 
 from app.models.request import TripRequest
+from app.api.routing import get_route_geometry
 from app.services.candidate_generator import generate_candidates
 from app.services.matrix_builder import build_matrix
 from app.services.optimizer import solve_with_ortools
@@ -33,7 +34,10 @@ def plan_trip(trip_request: TripRequest):
         flattened_locations=flattened_locations,
     )
 
+    ordered_locations = [stop.location for stop in solution.ordered_stops]
+    route_geojson = get_route_geometry(ordered_locations)
+
     end_time = time.perf_counter()
     runtime_seconds = end_time - start_time
 
-    return solution, runtime_seconds
+    return solution, runtime_seconds, route_geojson
