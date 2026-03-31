@@ -21,3 +21,21 @@ def get_distance_matrix(locations: List[Location]) -> dict:
     response = requests.post(url, json=body, headers=headers, timeout=60)
     response.raise_for_status()
     return response.json()
+
+
+def get_route_geometry(locations: List[Location]) -> dict:
+    if not settings.ORS_API_KEY:
+        raise ValueError("Missing ORS_API_KEY in environment.")
+
+    url = f"{settings.ORS_BASE_URL}/v2/directions/driving-car/geojson"
+    headers = {
+        "Authorization": settings.ORS_API_KEY,
+        "Content-Type": "application/json",
+    }
+    body = {
+        "coordinates": [[loc.lon, loc.lat] for loc in locations]
+    }
+
+    response = requests.post(url, json=body, headers=headers, timeout=60)
+    response.raise_for_status()
+    return response.json()
