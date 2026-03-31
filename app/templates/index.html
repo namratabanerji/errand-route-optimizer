@@ -5,6 +5,14 @@
   <meta name="viewport" content="width=device-width, initial-scale=1.0" />
   <title>Errand Route Optimizer</title>
   <link rel="stylesheet" href="/static/styles.css" />
+
+  <!-- Leaflet -->
+  <link
+    rel="stylesheet"
+    href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
+    integrity="sha256-p4NxAoJBhIIN+hmNHrzRCf9tD/miZyoHS5obTRR9BMY="
+    crossorigin=""
+  />
 </head>
 <body>
   <main class="container">
@@ -32,18 +40,77 @@
 
     <section id="status"></section>
     <section id="results"></section>
+    <section id="map-section">
+      <h2>Map</h2>
+      <div id="map"></div>
+    </section>
   </main>
+
+  <script
+    src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"
+    integrity="sha256-20nQCchB9co0qIjJZRGuk2/Z9VM+kNiyxNV1lvTlZBo="
+    crossorigin=""
+  ></script>
 
   <script>
     const form = document.getElementById("route-form");
     const statusEl = document.getElementById("status");
     const resultsEl = document.getElementById("results");
 
+    let map = L.map("map").setView([39.9612, -82.9988], 11);
+    let markersLayer = L.layerGroup().addTo(map);
+    let routeLine = null;
+
+    L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
+      maxZoom: 19,
+      attribution: "&copy; OpenStreetMap contributors"
+    }).addTo(map);
+
+    function clearMap() {
+      markersLayer.clearLayers();
+      if (routeLine) {
+        map.removeLayer(routeLine);
+        routeLine = null;
+      }
+    }
+
+    function drawRouteOnMap(stops) {
+      clearMap();
+
+      if (!stops || stops.length === 0) {
+        return;
+      }
+
+      const latlngs = [];
+
+      stops.forEach((stop, index) => {
+        const latlng = [stop.lat, stop.lon];
+        latlngs.push(latlng);
+
+        let label = `${stop.order}: ${stop.name}`;
+        if (stop.category) {
+          label += ` (${stop.category})`;
+        }
+
+        L.marker(latlng)
+          .addTo(markersLayer)
+          .bindPopup(`<strong>${label}</strong><br>${stop.address || ""}`);
+      });
+
+      routeLine = L.polyline(latlngs).addTo(map);
+      map.fitBounds(routeLine.getBounds(), { padding: [30, 30] });
+    }
+
+    function metersToMiles(meters) {
+      return meters / 1609.34;
+    }
+
     form.addEventListener("submit", async (e) => {
       e.preventDefault();
 
       statusEl.textContent = "Planning route...";
       resultsEl.innerHTML = "";
+      clearMap();
 
       const payload = {
         origin: document.getElementById("origin").value,
@@ -74,7 +141,7 @@
 
         let html = "";
         html += `<h2>Summary</h2>`;
-        html += `<p><strong>Total distance:</strong> ${data.total_distance_meters.toFixed(2)} meters</p>`;
+        html += `<p><strong>Total distance:</strong> ${data.total_distance_meters.toFixed(2)} meters (${metersToMiles(data.total_distance_meters).toFixed(2)} miles)</p>`;
         html += `<p><strong>Total duration:</strong> ${(data.total_duration_seconds / 60).toFixed(2)} minutes</p>`;
         html += `<p><strong>Runtime:</strong> ${data.runtime_seconds.toFixed(4)} seconds</p>`;
 
@@ -95,6 +162,8 @@
         html += `</ul>`;
 
         resultsEl.innerHTML = html;
+        drawRouteOnMap(data.ordered_stops);
+
       } catch (err) {
         statusEl.textContent = "Error.";
         resultsEl.innerHTML = `<p class="error">${err.message}</p>`;
