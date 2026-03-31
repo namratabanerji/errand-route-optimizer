@@ -6,7 +6,6 @@
   <title>Errand Route Optimizer</title>
   <link rel="stylesheet" href="/static/styles.css" />
 
-  <!-- Leaflet -->
   <link
     rel="stylesheet"
     href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css"
@@ -40,6 +39,7 @@
 
     <section id="status"></section>
     <section id="results"></section>
+
     <section id="map-section">
       <h2>Map</h2>
       <div id="map"></div>
@@ -59,7 +59,7 @@
 
     let map = L.map("map").setView([39.9612, -82.9988], 11);
     let markersLayer = L.layerGroup().addTo(map);
-    let routeLine = null;
+    let routeLayer = null;
 
     L.tileLayer("https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png", {
       maxZoom: 19,
@@ -68,37 +68,57 @@
 
     function clearMap() {
       markersLayer.clearLayers();
-      if (routeLine) {
-        map.removeLayer(routeLine);
-        routeLine = null;
+      if (routeLayer) {
+        map.removeLayer(routeLayer);
+        routeLayer = null;
       }
     }
 
-    function drawRouteOnMap(stops) {
+    function makeNumberedIcon(order, isFirst, isLast) {
+      let extraClass = "mid-stop";
+      if (isFirst) extraClass = "start-stop";
+      if (isLast) extraClass = "end-stop";
+
+      return L.divIcon({
+        className: "custom-pin-wrapper",
+        html: `<div class="custom-pin ${extraClass}">${order}</div>`,
+        iconSize: [32, 32],
+        iconAnchor: [16, 16],
+        popupAnchor: [0, -16]
+      });
+    }
+
+    function drawRouteOnMap(stops, routeGeojson) {
       clearMap();
 
       if (!stops || stops.length === 0) {
         return;
       }
 
-      const latlngs = [];
-
       stops.forEach((stop, index) => {
         const latlng = [stop.lat, stop.lon];
-        latlngs.push(latlng);
+        const isFirst = index === 0;
+        const isLast = index === stops.length - 1;
 
-        let label = `${stop.order}: ${stop.name}`;
-        if (stop.category) {
-          label += ` (${stop.category})`;
-        }
+        const displayLabel = stop.name && stop.name.trim()
+          ? stop.name
+          : (stop.address || "Unnamed location");
 
-        L.marker(latlng)
+        const icon = makeNumberedIcon(stop.order, isFirst, isLast);
+
+        L.marker(latlng, { icon })
           .addTo(markersLayer)
-          .bindPopup(`<strong>${label}</strong><br>${stop.address || ""}`);
+          .bindTooltip(displayLabel, {
+            direction: "top",
+            offset: [0, -12],
+            opacity: 0.95
+          });
       });
 
-      routeLine = L.polyline(latlngs).addTo(map);
-      map.fitBounds(routeLine.getBounds(), { padding: [30, 30] });
+      if (routeGeojson) {
+        routeLayer = L.geoJSON(routeGeojson).addTo(map);
+        map.fitBounds(routeLayer.getBounds(), { padding: [30, 30] });
+      }
     }
 
     function metersToMiles(meters) {
@@ -147,7 +167,8 @@
 
         html += `<h2>Route</h2><ol>`;
         for (const stop of data.ordered_stops) {
-          html += `<li><strong>${stop.name}</strong>`;
+          const label = stop.name && stop.name.trim() ? stop.name : (stop.address || "Unnamed location");
+          html += `<li><strong>${label}</strong>`;
           if (stop.category) {
             html += ` (${stop.category})`;
           }
@@ -162,7 +183,7 @@
         html += `</ul>`;
 
         resultsEl.innerHTML = html;
-        drawRouteOnMap(data.ordered_stops);
+        drawRouteOnMap(data.ordered_stops, data.route_geojson);
 
       } catch (err) {
         statusEl.textContent = "Error.";
