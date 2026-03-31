@@ -1,0 +1,105 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+  <meta charset="UTF-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+  <title>Errand Route Optimizer</title>
+  <link rel="stylesheet" href="/static/styles.css" />
+</head>
+<body>
+  <main class="container">
+    <h1>Errand Route Optimizer</h1>
+    <p>Enter a source, destination, and the stops you want to make in between.</p>
+
+    <form id="route-form">
+      <label for="origin">Source</label>
+      <input id="origin" name="origin" type="text" value="2115 Neil Ave, Columbus, OH 43210" required />
+
+      <label for="destination">Destination</label>
+      <input id="destination" name="destination" type="text" value="2115 Neil Ave, Columbus, OH 43210" required />
+
+      <label for="stops">Stops (comma-separated)</label>
+      <input id="stops" name="stops" type="text" value="Walmart, Lowe's" required />
+
+      <label for="max_candidates">Max candidates per stop</label>
+      <input id="max_candidates" name="max_candidates" type="number" min="1" max="10" value="3" required />
+
+      <label for="search_radius">Search radius (meters)</label>
+      <input id="search_radius" name="search_radius" type="number" min="1000" max="50000" value="10000" required />
+
+      <button type="submit">Plan Route</button>
+    </form>
+
+    <section id="status"></section>
+    <section id="results"></section>
+  </main>
+
+  <script>
+    const form = document.getElementById("route-form");
+    const statusEl = document.getElementById("status");
+    const resultsEl = document.getElementById("results");
+
+    form.addEventListener("submit", async (e) => {
+      e.preventDefault();
+
+      statusEl.textContent = "Planning route...";
+      resultsEl.innerHTML = "";
+
+      const payload = {
+        origin: document.getElementById("origin").value,
+        destination: document.getElementById("destination").value,
+        stops: document.getElementById("stops").value
+          .split(",")
+          .map(s => s.trim())
+          .filter(Boolean),
+        max_candidates_per_stop: parseInt(document.getElementById("max_candidates").value, 10),
+        require_opening_hours: false,
+        search_radius_meters: parseInt(document.getElementById("search_radius").value, 10)
+      };
+
+      try {
+        const response = await fetch("/plan", {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify(payload)
+        });
+
+        const data = await response.json();
+
+        if (!response.ok) {
+          throw new Error(data.detail || "Request failed");
+        }
+
+        statusEl.textContent = "Done.";
+
+        let html = "";
+        html += `<h2>Summary</h2>`;
+        html += `<p><strong>Total distance:</strong> ${data.total_distance_meters.toFixed(2)} meters</p>`;
+        html += `<p><strong>Total duration:</strong> ${(data.total_duration_seconds / 60).toFixed(2)} minutes</p>`;
+        html += `<p><strong>Runtime:</strong> ${data.runtime_seconds.toFixed(4)} seconds</p>`;
+
+        html += `<h2>Route</h2><ol>`;
+        for (const stop of data.ordered_stops) {
+          html += `<li><strong>${stop.name}</strong>`;
+          if (stop.category) {
+            html += ` (${stop.category})`;
+          }
+          html += `<br>${stop.address || ""}</li>`;
+        }
+        html += `</ol>`;
+
+        html += `<h2>Selected Locations by Category</h2><ul>`;
+        for (const [category, name] of Object.entries(data.selected_locations_by_category)) {
+          html += `<li><strong>${category}:</strong> ${name}</li>`;
+        }
+        html += `</ul>`;
+
+        resultsEl.innerHTML = html;
+      } catch (err) {
+        statusEl.textContent = "Error.";
+        resultsEl.innerHTML = `<p class="error">${err.message}</p>`;
+      }
+    });
+  </script>
+</body>
+</html>

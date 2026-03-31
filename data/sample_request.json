@@ -1,0 +1,8 @@
+{
+  "origin": "Columbus, OH",
+  "destination": "Columbus, OH",
+  "stops": ["Lowe's", "Walmart"],
+  "max_candidates_per_stop": 3,
+  "require_opening_hours": false,
+  "search_radius_meters": 20000
+}
