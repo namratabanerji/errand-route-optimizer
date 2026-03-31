@@ -8,7 +8,8 @@ router = APIRouter()
 @router.post("/plan")
 def plan_route(trip_request: TripRequest):
     try:
-        solution, runtime_seconds = plan_trip(trip_request)
+        solution, runtime_seconds, route_geojson = plan_trip(trip_request)
+
         return {
             "ordered_stops": [
                 {
@@ -25,6 +26,7 @@ def plan_route(trip_request: TripRequest):
             "total_duration_seconds": solution.total_duration_seconds,
             "selected_locations_by_category": solution.selected_locations_by_category,
             "runtime_seconds": runtime_seconds,
+            "route_geojson": route_geojson,
         }
     except Exception as exc:
         raise HTTPException(status_code=500, detail=str(exc))
