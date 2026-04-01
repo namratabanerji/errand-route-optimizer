@@ -10,3 +10,4 @@ class TripRequest(BaseModel):
     require_opening_hours: bool = False
     search_radius_meters: int = 15000
     departure_time: Optional[str] = None
+    beam_width: int = 5

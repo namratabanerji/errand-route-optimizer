@@ -1,4 +1,5 @@
 import itertools
+from math import prod
 from typing import Dict, List, Tuple
 from ortools.constraint_solver import pywrapcp, routing_enums_pb2
 
@@ -28,14 +29,6 @@ def solve_tsp_order_for_selected_locations(
     distance_matrix: List[List[float]],
     duration_matrix: List[List[float]],
 ) -> List[int]:
-    """
-    Solve the best visiting order for:
-      [origin] + chosen stop locations + [destination]
-
-    selected_global_indices should already include:
-      first element = origin index
-      last element = destination index
-    """
     n = len(selected_global_indices)
 
     local_duration_matrix = [
@@ -57,7 +50,7 @@ def solve_tsp_order_for_selected_locations(
     search_parameters = pywrapcp.DefaultRoutingSearchParameters()
     search_parameters.first_solution_strategy = routing_enums_pb2.FirstSolutionStrategy.PATH_CHEAPEST_ARC
     search_parameters.local_search_metaheuristic = routing_enums_pb2.LocalSearchMetaheuristic.GUIDED_LOCAL_SEARCH
-    search_parameters.time_limit.seconds = 5
+    search_parameters.time_limit.seconds = 3
 
     solution = routing.SolveWithParameters(search_parameters)
     if solution is None:
@@ -74,7 +67,7 @@ def solve_tsp_order_for_selected_locations(
     return ordered_global_indices
 
 
-def solve_with_ortools(
+def solve_with_ortools_exhaustive(
     origin: Location,
     destination: Location,
     candidates_by_stop: Dict[str, List[Location]],
@@ -82,23 +75,21 @@ def solve_with_ortools(
     duration_matrix: List[List[float]],
     flattened_locations: List[Location],
 ) -> TripSolution:
-    """
-    Current strategy:
-    1. Enumerate one chosen candidate per category
-    2. Use OR-Tools to optimize the stop order for that chosen set
-    3. Pick the overall best combination by total duration
-
-    This is a good intermediate step before a more advanced GTSP formulation.
-    """
     categories = list(candidates_by_stop.keys())
     candidate_lists = [candidates_by_stop[cat] for cat in categories]
 
-    best = None
+    total_combinations = prod(len(lst) for lst in candidate_lists)
+    combinations_evaluated = 0
 
+    print(f"\n[Exhaustive] Total candidate combinations: {total_combinations}")
+
+    best = None
     origin_index = 0
     destination_index = len(flattened_locations) - 1
 
     for chosen_locations in itertools.product(*candidate_lists):
+        combinations_evaluated += 1
+
         chosen_indices = [flattened_locations.index(loc) for loc in chosen_locations]
         selected_global_indices = [origin_index] + chosen_indices + [destination_index]
 
@@ -138,4 +129,137 @@ def solve_with_ortools(
         total_distance_meters=best["total_distance"],
         total_duration_seconds=best["total_duration"],
         selected_locations_by_category=best["selected"],
+        solver_name="exhaustive",
+        combinations_evaluated=combinations_evaluated,
+        beam_states_explored=None,
+        beam_width_used=None,
+    )
+
+
+def solve_with_beam_search(
+    origin: Location,
+    destination: Location,
+    candidates_by_stop: Dict[str, List[Location]],
+    distance_matrix: List[List[float]],
+    duration_matrix: List[List[float]],
+    flattened_locations: List[Location],
+    beam_width: int = 5,
+) -> TripSolution:
+    categories = list(candidates_by_stop.keys())
+    origin_index = 0
+    destination_index = len(flattened_locations) - 1
+
+    total_combinations = prod(len(candidates_by_stop[cat]) for cat in categories)
+    beam_states_explored = 0
+
+    print(f"\n[Beam] Theoretical full combinations: {total_combinations}")
+    print(f"[Beam] Beam width: {beam_width}")
+
+    beam = [
+        {
+            "chosen_locations": [],
+            "selected_by_category": {},
+            "ordered_global_indices": [origin_index, destination_index],
+            "total_distance": 0.0,
+            "total_duration": 0.0,
+        }
+    ]
+
+    for step_idx, category in enumerate(categories, start=1):
+        next_beam = []
+
+        for partial in beam:
+            for candidate in candidates_by_stop[category]:
+                if candidate in partial["chosen_locations"]:
+                    continue
+
+                beam_states_explored += 1
+
+                new_chosen_locations = partial["chosen_locations"] + [candidate]
+                chosen_indices = [flattened_locations.index(loc) for loc in new_chosen_locations]
+                selected_global_indices = [origin_index] + chosen_indices + [destination_index]
+
+                ordered_global_indices = solve_tsp_order_for_selected_locations(
+                    selected_global_indices=selected_global_indices,
+                    distance_matrix=distance_matrix,
+                    duration_matrix=duration_matrix,
+                )
+
+                total_distance, total_duration = compute_route_cost(
+                    ordered_global_indices,
+                    distance_matrix,
+                    duration_matrix,
+                )
+
+                new_selected = dict(partial["selected_by_category"])
+                new_selected[category] = candidate.name
+
+                next_beam.append(
+                    {
+                        "chosen_locations": new_chosen_locations,
+                        "selected_by_category": new_selected,
+                        "ordered_global_indices": ordered_global_indices,
+                        "total_distance": total_distance,
+                        "total_duration": total_duration,
+                    }
+                )
+
+        next_beam.sort(key=lambda x: x["total_duration"])
+        beam = next_beam[:beam_width]
+
+        print(
+            f"[Beam] After category {step_idx}/{len(categories)} "
+            f"('{category}'): kept {len(beam)} states, explored {beam_states_explored} total states"
+        )
+
+        if not beam:
+            raise RuntimeError(f"Beam search failed while expanding category '{category}'.")
+
+    best = min(beam, key=lambda x: x["total_duration"])
+
+    ordered_stops = [
+        RouteStop(order=i, location=flattened_locations[global_idx])
+        for i, global_idx in enumerate(best["ordered_global_indices"])
+    ]
+
+    return TripSolution(
+        ordered_stops=ordered_stops,
+        total_distance_meters=best["total_distance"],
+        total_duration_seconds=best["total_duration"],
+        selected_locations_by_category=best["selected_by_category"],
+        solver_name="beam_search",
+        combinations_evaluated=total_combinations,
+        beam_states_explored=beam_states_explored,
+        beam_width_used=beam_width,
+    )
+
+
+def solve_with_ortools(
+    origin: Location,
+    destination: Location,
+    candidates_by_stop: Dict[str, List[Location]],
+    distance_matrix: List[List[float]],
+    duration_matrix: List[List[float]],
+    flattened_locations: List[Location],
+    beam_width: int = 5,
+    use_beam_search: bool = True,
+) -> TripSolution:
+    if use_beam_search:
+        return solve_with_beam_search(
+            origin=origin,
+            destination=destination,
+            candidates_by_stop=candidates_by_stop,
+            distance_matrix=distance_matrix,
+            duration_matrix=duration_matrix,
+            flattened_locations=flattened_locations,
+            beam_width=beam_width,
+        )
+
+    return solve_with_ortools_exhaustive(
+        origin=origin,
+        destination=destination,
+        candidates_by_stop=candidates_by_stop,
+        distance_matrix=distance_matrix,
+        duration_matrix=duration_matrix,
+        flattened_locations=flattened_locations,
     )

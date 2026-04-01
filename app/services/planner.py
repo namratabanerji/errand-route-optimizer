@@ -32,6 +32,8 @@ def plan_trip(trip_request: TripRequest):
         distance_matrix=distance_matrix,
         duration_matrix=duration_matrix,
         flattened_locations=flattened_locations,
+        beam_width=trip_request.beam_width,
+        use_beam_search=True,
     )
 
     ordered_locations = [stop.location for stop in solution.ordered_stops]
