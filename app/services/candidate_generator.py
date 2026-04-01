@@ -3,7 +3,16 @@ from app.models.location import Location
 from app.models.request import TripRequest
 from app.api.geocoding import geocode_address
 from app.api.places import search_places_nearby
+import math
 
+def haversine(lat1, lon1, lat2, lon2):
+    R = 6371000
+    phi1, phi2 = math.radians(lat1), math.radians(lat2)
+    dphi = math.radians(lat2 - lat1)
+    dlambda = math.radians(lon2 - lon1)
+
+    a = math.sin(dphi/2)**2 + math.cos(phi1)*math.cos(phi2)*math.sin(dlambda/2)**2
+    return 2 * R * math.atan2(math.sqrt(a), math.sqrt(1-a))
 
 def generate_candidates(trip_request: TripRequest) -> Tuple[Location, Location, Dict[str, List[Location]]]:
     origin = geocode_address(trip_request.origin)
@@ -27,6 +36,8 @@ def generate_candidates(trip_request: TripRequest) -> Tuple[Location, Location, 
 
         if trip_request.require_opening_hours:
             candidates = [c for c in candidates if c.opening_hours]
+            
+        candidates.sort(key=lambda loc: haversine(origin.lat, origin.lon, loc.lat, loc.lon))
 
         candidates = candidates[:trip_request.max_candidates_per_stop]
 

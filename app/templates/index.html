@@ -88,38 +88,56 @@
       });
     }
 
-    function drawRouteOnMap(stops, routeGeojson) {
-      clearMap();
+    
+  function drawRouteOnMap(stops, routeGeojson) {
+    clearMap();
 
-      if (!stops || stops.length === 0) {
-        return;
-      }
-
-      stops.forEach((stop, index) => {
-        const latlng = [stop.lat, stop.lon];
-        const isFirst = index === 0;
-        const isLast = index === stops.length - 1;
-
-        const displayLabel = stop.name && stop.name.trim()
-          ? stop.name
-          : (stop.address || "Unnamed location");
-
-        const icon = makeNumberedIcon(stop.order, isFirst, isLast);
-
-        L.marker(latlng, { icon })
-          .addTo(markersLayer)
-          .bindTooltip(displayLabel, {
-            direction: "top",
-            offset: [0, -12],
-            opacity: 0.95
-          });
-      });
-
-      if (routeGeojson) {
-        routeLayer = L.geoJSON(routeGeojson).addTo(map);
-        map.fitBounds(routeLayer.getBounds(), { padding: [30, 30] });
-      }
+    if (!stops || stops.length === 0) {
+      return;
     }
+
+    const seenCoords = new Map();
+
+    stops.forEach((stop, index) => {
+      const displayOrder = index + 1;
+      const isFirst = index === 0;
+      const isLast = index === stops.length - 1;
+
+      const displayLabel = stop.name && stop.name.trim()
+        ? stop.name
+        : (stop.address || "Unnamed location");
+
+      const coordKey = `${stop.lat.toFixed(6)},${stop.lon.toFixed(6)}`;
+      const duplicateCount = seenCoords.get(coordKey) || 0;
+      seenCoords.set(coordKey, duplicateCount + 1);
+
+      let lat = stop.lat;
+      let lon = stop.lon;
+
+      if (duplicateCount > 0) {
+        const offsetSize = 0.00018;
+        const angle = duplicateCount * (Math.PI / 4);
+        lat += offsetSize * Math.sin(angle);
+        lon += offsetSize * Math.cos(angle);
+      }
+
+      const latlng = [lat, lon];
+      const icon = makeNumberedIcon(displayOrder, isFirst, isLast);
+
+      L.marker(latlng, { icon })
+        .addTo(markersLayer)
+        .bindTooltip(displayLabel, {
+          direction: "top",
+          offset: [0, -12],
+          opacity: 0.95
+        });
+    });
+
+    if (routeGeojson) {
+      routeLayer = L.geoJSON(routeGeojson).addTo(map);
+      map.fitBounds(routeLayer.getBounds(), { padding: [30, 30] });
+    }
+  }
 
     function metersToMiles(meters) {
       return meters / 1609.34;

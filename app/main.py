@@ -6,7 +6,7 @@ def main():
     trip_request = TripRequest(
         origin="2115 Neil Ave, Columbus, OH 43210",
         destination="2115 Neil Ave, Columbus, OH 43210",
-        stops=["Walmart", "Lowe's", "Kroger", "Michaels"],
+        stops=["Walmart", "Lowe's"],
         max_candidates_per_stop=3,
         require_opening_hours=False,
         search_radius_meters=10000,
